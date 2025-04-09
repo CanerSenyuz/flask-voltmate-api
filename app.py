@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+import time
 
 app = Flask(__name__)
 
@@ -19,11 +20,17 @@ def predict():
         if not isinstance(requests, list):
             return jsonify({"status": "error", "message": "'requests' bir liste olmalı."}), 400
 
-        # 🟥 Eğer tüm park alanları doluysa gelen istekleri sıraya al
         tum_parklar = ["A", "B", "C", "D"]
+
+        # 🟥 Eğer tüm park alanları doluysa gelen istekleri sıraya al
         if all(doluluk.get(p, 0) == 1 for p in tum_parklar):
-            global bekleyen_talepler
-            bekleyen_talepler.extend(requests)
+            for istek in requests:
+                bekleyen_talepler.append({
+                    "parkid": istek["parkid"],
+                    "current": istek["current"],
+                    "desired": istek["desired"],
+                    "timestamp": time.time()
+                })
             print("🗃️ Tüm alanlar dolu, talepler sıraya alındı!")
             return jsonify({
                 "status": "full",
@@ -38,7 +45,6 @@ def predict():
             dolu = doluluk.get(parkid, 0)
             return (kalan_sarj * 1.0) - (dolu * 100.0)
 
-        # 🧮 Sıralama yapılır
         sirali = sorted(requests, key=hesapla_oncelik, reverse=True)
 
         return jsonify({
@@ -55,9 +61,16 @@ def predict():
 # ✅ Bekleyen talepleri listeleme endpoint'i
 @app.route('/queued', methods=['GET'])
 def queued_requests():
+    now = time.time()
+    ten_minutes_ago = now - 600  # 10 dakika önce
+
+    aktif_bekleyenler = [
+        item for item in bekleyen_talepler if item.get("timestamp", 0) >= ten_minutes_ago
+    ]
+
     return jsonify({
         "status": "ok",
-        "queued": bekleyen_talepler
+        "queued": aktif_bekleyenler
     })
 
 if __name__ == '__main__':
