@@ -22,21 +22,22 @@ def predict():
 
         tum_parklar = ["A", "B", "C", "D"]
 
-        # 🟥 Eğer tüm park alanları doluysa gelen istekleri sıraya al
+        # 🟥 Eğer tüm park alanları doluysa sadece son isteği sıraya al
         if all(doluluk.get(p, 0) == 1 for p in tum_parklar):
-            for istek in requests:
+            if requests:
+                son_istek = requests[-1]  # 🔻 Sadece en son gelen istek
                 bekleyen_talepler.append({
-                    "parkid": istek["parkid"],
-                    "current": istek["current"],
-                    "desired": istek["desired"],
+                    "parkid": son_istek["parkid"],
+                    "current": son_istek["current"],
+                    "desired": son_istek["desired"],
                     "timestamp": time.time()
                 })
-            print("🗃️ Tüm alanlar dolu, talepler sıraya alındı!")
-            return jsonify({
-                "status": "full",
-                "message": "Tüm park alanları dolu, talebiniz sıraya alındı.",
-                "saved_requests": requests
-            }), 200
+                print("🗃️ Tüm alanlar dolu, sadece son talep sıraya alındı!")
+                return jsonify({
+                    "status": "full",
+                    "message": "Tüm park alanları dolu, talebiniz sıraya alındı.",
+                    "saved_request": son_istek
+                }), 200
 
         # ⚙️ Öncelik sıralama fonksiyonu
         def hesapla_oncelik(istek):
