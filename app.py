@@ -18,7 +18,12 @@ def predict():
         print("📥 Gelen istekler:", requests)
 
         if not isinstance(requests, list):
-            return jsonify({"status": "error", "message": "'requests' bir liste olmalı."}), 400
+            response = make_response(jsonify({
+                "status": "error",
+                "message": "'requests' bir liste olmalı."
+            }), 400)
+            response.headers["Content-Type"] = "application/json"
+            return response
 
         tum_parklar = ["A", "B", "C", "D"]
 
@@ -33,11 +38,13 @@ def predict():
                     "timestamp": time.time()
                 })
                 print("🗃️ Tüm alanlar dolu, sadece son talep sıraya alındı!")
-                return make_response(jsonify({
+                response = make_response(jsonify({
                     "status": "full",
                     "message": "Tüm park alanları dolu, talebiniz sıraya alındı.",
                     "saved_request": son_istek
                 }), 200)
+                response.headers["Content-Type"] = "application/json"
+                return response
 
         # ⚙️ Öncelik sıralama
         def hesapla_oncelik(istek):
@@ -45,16 +52,21 @@ def predict():
 
         sirali = sorted(requests, key=hesapla_oncelik, reverse=True)
 
-        return jsonify({
+        response = make_response(jsonify({
             "status": "success",
             "sirali_istekler": sirali
-        })
+        }), 200)
+        response.headers["Content-Type"] = "application/json"
+        return response
 
     except Exception as e:
-        return jsonify({
+        response = make_response(jsonify({
             "status": "error",
             "message": f"Sunucu hatası: {str(e)}"
-        }), 500
+        }), 500)
+        response.headers["Content-Type"] = "application/json"
+        return response
+
 
 
 # ✅ Bekleyen talepleri listele
