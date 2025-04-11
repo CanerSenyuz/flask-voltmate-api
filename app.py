@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, make_response, request, jsonify
 import time
 
 app = Flask(__name__)
@@ -33,11 +33,11 @@ def predict():
                     "timestamp": time.time()
                 })
                 print("🗃️ Tüm alanlar dolu, sadece son talep sıraya alındı!")
-                return jsonify({
+                return make_response(jsonify({
                     "status": "full",
                     "message": "Tüm park alanları dolu, talebiniz sıraya alındı.",
                     "saved_request": son_istek
-                }), 200
+                }), 200)
 
         # ⚙️ Öncelik sıralama
         def hesapla_oncelik(istek):
