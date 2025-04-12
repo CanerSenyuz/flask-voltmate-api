@@ -25,7 +25,7 @@ def predict():
         # 🟥 Eğer tüm park alanları doluysa sadece son isteği sıraya al
         if all(doluluk.get(p, 0) == 1 for p in tum_parklar):
             if requests:
-                son_istek = requests[-1]  # 🔻 Sadece en son gelen istek
+                son_istek = requests[-1]
                 bekleyen_talepler.append({
                     "parkid": son_istek["parkid"],
                     "current": son_istek["current"],
@@ -39,12 +39,9 @@ def predict():
                     "saved_request": son_istek
                 }), 200
 
-        # ⚙️ Öncelik sıralama fonksiyonu
+        # ⚙️ Öncelik sıralama
         def hesapla_oncelik(istek):
-            kalan_sarj = istek["desired"] - istek["current"]
-            parkid = istek["parkid"]
-            dolu = doluluk.get(parkid, 0)
-            return (kalan_sarj * 1.0) - (dolu * 100.0)
+            return (istek["desired"] - istek["current"])
 
         sirali = sorted(requests, key=hesapla_oncelik, reverse=True)
 
@@ -59,20 +56,64 @@ def predict():
             "message": f"Sunucu hatası: {str(e)}"
         }), 500
 
-# ✅ Bekleyen talepleri listeleme endpoint'i
+
+# ✅ Bekleyen talepleri listele
 @app.route('/queued', methods=['GET'])
 def queued_requests():
-    now = time.time()
-    ten_minutes_ago = now - 600  # 10 dakika önce
-
-    aktif_bekleyenler = [
-        item for item in bekleyen_talepler if item.get("timestamp", 0) >= ten_minutes_ago
-    ]
-
     return jsonify({
         "status": "ok",
-        "queued": aktif_bekleyenler
+        "queued": bekleyen_talepler
     })
+
+
+# ✅ Yeni: Boş alan varsa en öncelikli talebi atar ve siler
+@app.route('/assign', methods=['POST'])
+def assign_request():
+    try:
+        data = request.get_json()
+        doluluk = data.get("doluluk", {})  # {"A": 1, "B": 0, ...}
+
+        tum_parklar = ["A", "B", "C", "D"]
+
+        for parkid in tum_parklar:
+            if doluluk.get(parkid, 1) == 0:  # Bu alan boş
+                if not bekleyen_talepler:
+                    return jsonify({"status": "empty", "message": "Bekleyen talep yok"})
+
+                # Talepleri sırala
+                def oncelik(istek):
+                    return istek["desired"] - istek["current"]
+
+                sirali = sorted(bekleyen_talepler, key=oncelik, reverse=True)
+                secilen = sirali[0]
+
+                # ✅ Otomatik olarak yeni parkid’ye aktar
+                atanan = {
+                    "parkid": parkid,
+                    "current": secilen["current"],
+                    "desired": secilen["desired"],
+                    "timestamp": time.time()
+                }
+
+                # Listeden çıkar
+                bekleyen_talepler.remove(secilen)
+
+                return jsonify({
+                    "status": "assigned",
+                    "assigned": atanan
+                })
+
+        return jsonify({
+            "status": "full",
+            "message": "Boş park alanı yok"
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
