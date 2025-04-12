@@ -26,6 +26,14 @@ def predict():
         if all(doluluk.get(p, 0) == 1 for p in tum_parklar):
             if requests:
                 son_istek = requests[-1]
+                # Aynı talepleri sil
+                bekleyen_talepler[:] = [
+                t for t in bekleyen_talepler
+                if not (
+                t["parkid"] == son_istek["parkid"] and
+                t["current"] == son_istek["current"] and
+                t["desired"] == son_istek["desired"]
+                )]
                 bekleyen_talepler.append({
                     "parkid": son_istek["parkid"],
                     "current": son_istek["current"],
