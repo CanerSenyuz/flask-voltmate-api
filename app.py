@@ -13,12 +13,14 @@ def predict():
 
         doluluk = data.get("doluluk", {})
         requests = data.get("requests", [])
+        extra_requests = data.get("extra_requests", [])
 
         print("📥 Gelen doluluk:", doluluk)
-        print("📥 Gelen istekler:", requests)
+        print("📥 Sıraya alınacak istekler (requests):", requests)
+        print("📊 Sıralama için gelen ekstra istekler (extra_requests):", extra_requests)
 
-        if not isinstance(requests, list):
-            return jsonify({"status": "error", "message": "'requests' bir liste olmalı."}), 400
+        if not isinstance(requests, list) or not isinstance(extra_requests, list):
+            return jsonify({"status": "error", "message": "'requests' ve 'extra_requests' listeler olmalı."}), 400
 
         tum_parklar = ["A", "B", "C", "D"]
 
@@ -28,12 +30,13 @@ def predict():
                 son_istek = requests[-1]
                 # Aynı talepleri sil
                 bekleyen_talepler[:] = [
-                t for t in bekleyen_talepler
-                if not (
-                t["parkid"] == son_istek["parkid"] and
-                t["current"] == son_istek["current"] and
-                t["desired"] == son_istek["desired"]
-                )]
+                    t for t in bekleyen_talepler
+                    if not (
+                        t["parkid"] == son_istek["parkid"] and
+                        t["current"] == son_istek["current"] and
+                        t["desired"] == son_istek["desired"]
+                    )
+                ]
                 bekleyen_talepler.append({
                     "parkid": son_istek["parkid"],
                     "current": son_istek["current"],
@@ -47,11 +50,11 @@ def predict():
                     "saved_request": son_istek
                 }), 200
 
-        # ⚙️ Öncelik sıralama
+        # ⚙️ Öncelik sıralama – tüm mevcutlar + yeni istekler
         def hesapla_oncelik(istek):
             return (istek["desired"] - istek["current"])
 
-        sirali = sorted(requests, key=hesapla_oncelik, reverse=True)
+        sirali = sorted(extra_requests, key=hesapla_oncelik, reverse=True)
 
         return jsonify({
             "status": "success",
@@ -74,7 +77,7 @@ def queued_requests():
     })
 
 
-# ✅ Yeni: Boş alan varsa en öncelikli talebi atar ve siler
+# ✅ Boş alan varsa en öncelikli talebi atar ve siler
 @app.route('/assign', methods=['POST'])
 def assign_request():
     try:
@@ -103,7 +106,6 @@ def assign_request():
                     "timestamp": time.time()
                 }
 
-                # Listeden çıkar
                 bekleyen_talepler.remove(secilen)
 
                 return jsonify({
