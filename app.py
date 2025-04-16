@@ -49,6 +49,15 @@ def predict():
         # ⚙️ Öncelik sıralama
         def hesapla_oncelik(istek):
             return (istek["desired"] - istek["current"])
+        # 🔁 Eksik ama boş alanlar varsa dummy isteklerle görünür yap
+        for parkid in tum_parklar:
+            if doluluk.get(park, 0) == 0:
+                if not any(r.get("parkid") == park for r in requests):
+                    requests.append({
+                        "parkid": parkid,
+                        "current": 0,
+                        "desired": 0,
+                    })
 
         sirali = sorted(requests, key=hesapla_oncelik, reverse=True)
 
