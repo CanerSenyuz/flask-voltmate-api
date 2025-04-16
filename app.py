@@ -12,31 +12,27 @@ def predict():
         data = request.get_json()
 
         doluluk = data.get("doluluk", {})
-        requests = data.get("requests", [])
-        extra_requests = data.get("extra_requests", [])
+        # Önce extra_requests varsa onu kullan, yoksa sadece requests
+        requests = data.get("extra_requests", data.get("requests", []))
 
         print("📥 Gelen doluluk:", doluluk)
-        print("📥 Sıraya alınacak istekler (requests):", requests)
-        print("📊 Sıralama için gelen ekstra istekler (extra_requests):", extra_requests)
+        print("📥 Gelen istekler:", requests)
 
-        if not isinstance(requests, list) or not isinstance(extra_requests, list):
-            return jsonify({"status": "error", "message": "'requests' ve 'extra_requests' listeler olmalı."}), 400
+        if not isinstance(requests, list):
+            return jsonify({"status": "error", "message": "'requests' bir liste olmalı."}), 400
 
         tum_parklar = ["A", "B", "C", "D"]
 
-        # 🟥 Eğer tüm park alanları doluysa sadece son isteği sıraya al
+        # Tüm parklar doluysa sadece son isteği sıraya al
         if all(doluluk.get(p, 0) == 1 for p in tum_parklar):
-            if requests:
-                son_istek = requests[-1]
-                # Aynı talepleri sil
-                bekleyen_talepler[:] = [
-                    t for t in bekleyen_talepler
-                    if not (
-                        t["parkid"] == son_istek["parkid"] and
-                        t["current"] == son_istek["current"] and
-                        t["desired"] == son_istek["desired"]
-                    )
-                ]
+            son_istek = data.get("requests", [])[-1] if data.get("requests") else None
+            if son_istek:
+                # Aynı talepler varsa sil
+                bekleyen_talepler[:] = [t for t in bekleyen_talepler if not (
+                    t["parkid"] == son_istek["parkid"] and
+                    t["current"] == son_istek["current"] and
+                    t["desired"] == son_istek["desired"]
+                )]
                 bekleyen_talepler.append({
                     "parkid": son_istek["parkid"],
                     "current": son_istek["current"],
@@ -50,11 +46,11 @@ def predict():
                     "saved_request": son_istek
                 }), 200
 
-        # ⚙️ Öncelik sıralama – tüm mevcutlar + yeni istekler
+        # ⚙️ Öncelik sıralama
         def hesapla_oncelik(istek):
             return (istek["desired"] - istek["current"])
 
-        sirali = sorted(extra_requests, key=hesapla_oncelik, reverse=True)
+        sirali = sorted(requests, key=hesapla_oncelik, reverse=True)
 
         return jsonify({
             "status": "success",
