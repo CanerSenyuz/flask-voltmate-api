@@ -35,28 +35,27 @@ def predict():
         if all(doluluk.get(p, 1) == 1 for p in tum_parklar):
             print("🟥 /predict - Tüm park alanları dolu.")
             if requests_input:
-                # Sadece en son gelen isteği kuyruğa al
                 son_istek = requests_input[-1]
-                # --- Kuyruğa Ekleme ve Sıralama ---
-                # Aynı isteğin tekrar eklenmesini önle (isteğe bağlı)
+                # --- Kuyruğa Ekleme & ID & Sıralama ---
                 bekleyen_talepler[:] = [t for t in bekleyen_talepler if not (
-                    t.get("parkid") == son_istek.get("parkid") and
-                    t.get("current") == son_istek.get("current") and
-                    t.get("desired") == son_istek.get("desired")
+                    # ... (aynı isteği önleme) ...
                 )]
-                # Zaman damgasıyla ekle
-                son_istek['timestamp'] = time.time()
-                bekleyen_talepler.append(son_istek)
-                print(f"➕ /predict - Kuyruğa eklendi: {son_istek}")
+                # *** YENİ: Benzersiz ID olarak timestamp ekle ***
+                request_timestamp_id = time.time()
+                son_istek['timestamp'] = request_timestamp_id # Orijinal timestamp kalsın
+                son_istek['request_id'] = request_timestamp_id # ID olarak da ekle
+                # --- ID Ekleme Sonu ---
 
-                # *** YENİ: Kuyruğu ekleme sonrası hemen sırala ***
+                bekleyen_talepler.append(son_istek)
+                print(f"➕ /predict - Kuyruğa eklendi (ID'li): {son_istek}")
+
                 bekleyen_talepler.sort(key=hesapla_oncelik, reverse=True)
-                print(f"📊 /predict - Kuyruk sıralandı. Güncel Sıralı Kuyruk: {bekleyen_talepler}")
-                # --- Sıralama Sonu ---
+                print(f"📊 /predict - Kuyruk sıralandı. ID'li Güncel Sıralı Kuyruk: {bekleyen_talepler}")
 
                 return jsonify({
                     "status": "full",
                     "message": "Tüm park alanları dolu, talebiniz sıraya alındı.",
+                    # *** YENİ: Kaydedilen isteğe ID ekle ***
                     "saved_request": son_istek
                 }), 200
             else:
