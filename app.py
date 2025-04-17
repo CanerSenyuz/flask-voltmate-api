@@ -165,10 +165,11 @@ def assign_request():
                 "current": secilen_talep.get("current"),
                 "desired": secilen_talep.get("desired"),
                 "original_parkid": secilen_talep.get("parkid"),
-                "queued_timestamp": secilen_talep.get("timestamp"),
+                 # *** BU SATIRI KONTROL ET/EKLE ***
+                "request_id": secilen_talep.get("request_id", -1.0), # .get() kullan ve varsayılan ekle
                 "assigned_timestamp": time.time()
             }
-            print(f"🅿️ Oluşturulan atama objesi: {atanan}")
+            print(f"🅿️ Android'e dönülecek atama objesi: {atanan}")
 
             return jsonify({
                 "status": "assigned",
