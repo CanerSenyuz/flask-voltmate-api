@@ -1,4 +1,4 @@
-# app.py dosyasında
+# app.py (Güncellenmiş Hali)
 
 from flask import Flask, request, jsonify
 import time
@@ -9,8 +9,9 @@ app = Flask(__name__)
 # Hafızada bekleyen taleplerin tutulacağı liste
 bekleyen_talepler = []
 
-# Öncelik sıralama fonksiyonu (değişiklik yok)
+# Öncelik sıralama fonksiyonu
 def hesapla_oncelik(istek):
+    # Öncelik = İstenen Şarj - Mevcut Şarj (Yüksek fark = Yüksek öncelik)
     return istek.get("desired", 0) - istek.get("current", 0)
 
 @app.route('/predict', methods=['POST'])
@@ -21,9 +22,9 @@ def predict():
         requests_input = data.get("requests", []) # Android'den gelen yeni istek(ler)
         extra_requests = data.get("extra_requests", []) # Android'den gelen tüm liste (mevcut+yeni)
 
-        print(f"📥 Gelen doluluk: {doluluk}")
-        print(f"📥 Gelen requests_input: {requests_input}")
-        print(f"📥 Gelen extra_requests: {extra_requests}")
+        print(f"📥 /predict - Gelen doluluk: {doluluk}")
+        print(f"📥 /predict - Gelen requests_input: {requests_input}")
+        print(f"📥 /predict - Gelen extra_requests: {extra_requests}")
 
         if not isinstance(extra_requests, list):
              return jsonify({"status": "error", "message": "'extra_requests' bir liste olmalı."}), 400
@@ -31,12 +32,12 @@ def predict():
         tum_parklar = ["A", "B", "C", "D"]
 
         # --- 1. Tüm parklar dolu mu kontrolü ---
-        # Not: doluluk.get(p, 1) -> Eğer park dolulukta yoksa, onu dolu (1) kabul et
         if all(doluluk.get(p, 1) == 1 for p in tum_parklar):
-            print("🟥 Tüm park alanları dolu.")
+            print("🟥 /predict - Tüm park alanları dolu.")
             if requests_input:
+                # Sadece en son gelen isteği kuyruğa al
                 son_istek = requests_input[-1]
-                # --- Kuyruğa Ekleme Mantığı ---
+                # --- Kuyruğa Ekleme ve Sıralama ---
                 # Aynı isteğin tekrar eklenmesini önle (isteğe bağlı)
                 bekleyen_talepler[:] = [t for t in bekleyen_talepler if not (
                     t.get("parkid") == son_istek.get("parkid") and
@@ -46,9 +47,13 @@ def predict():
                 # Zaman damgasıyla ekle
                 son_istek['timestamp'] = time.time()
                 bekleyen_talepler.append(son_istek)
-                print(f"➕ Kuyruğa eklendi: {son_istek}")
-                print(f"📊 Güncel Kuyruk: {bekleyen_talepler}")
-                # --- Kuyruğa Ekleme Sonu ---
+                print(f"➕ /predict - Kuyruğa eklendi: {son_istek}")
+
+                # *** YENİ: Kuyruğu ekleme sonrası hemen sırala ***
+                bekleyen_talepler.sort(key=hesapla_oncelik, reverse=True)
+                print(f"📊 /predict - Kuyruk sıralandı. Güncel Sıralı Kuyruk: {bekleyen_talepler}")
+                # --- Sıralama Sonu ---
+
                 return jsonify({
                     "status": "full",
                     "message": "Tüm park alanları dolu, talebiniz sıraya alındı.",
@@ -59,142 +64,126 @@ def predict():
                  return jsonify({"status": "full", "message": "Tüm park alanları dolu."}), 200
 
         # --- 2. Boş ve talepsiz parklar için dummy istek ekle ---
-        # Bu adım, boş parkların da sıralamaya dahil edilmesini sağlar
         mevcut_park_talepleri = set(r.get("parkid") for r in extra_requests)
         dummy_eklendi = False
         for park in tum_parklar:
-            # Sadece durumu 0 (boş) olan VE mevcut taleplerde olmayan parklar için dummy ekle
             if doluluk.get(park, 1) == 0 and park not in mevcut_park_talepleri:
                 extra_requests.append({
                     "parkid": park,
                     "current": 0,
                     "desired": 0,
-                    "is_dummy": True # Dummy olduğunu belirtmek faydalı olabilir
+                    "is_dummy": True
                 })
                 dummy_eklendi = True
         if dummy_eklendi:
-            print(f"➕ Dummy eklendikten sonra extra_requests: {extra_requests}")
+            print(f"➕ /predict - Dummy eklendikten sonra extra_requests: {extra_requests}")
 
         # --- 3. Sadece BOŞ (doluluk == 0) parklara ait talepleri filtrele ---
         uygun_talepler = []
         for istek in extra_requests:
             park_id = istek.get("parkid")
-            # Park ID var mı VE bu parkın doluluk durumu 0 (boş) mu?
             if park_id and doluluk.get(park_id, 1) == 0:
                 uygun_talepler.append(istek)
+        print(f"✅ /predict - Sadece boş parklara ait filtrelenmiş talepler: {uygun_talepler}")
 
-        print(f"✅ Sadece boş parklara ait filtrelenmiş talepler: {uygun_talepler}")
-
-        # --- 4. Filtrelenmiş listeyi önceliğe göre sırala ---
-        # Eğer uygun_talepler boş değilse sırala
+        # --- 4. Filtrelenmiş listeyi önceliğe göre sırala (Bu sıralama kalıyor) ---
+        sirali_uygun = [] # Başlangıçta boş liste
         if uygun_talepler:
             sirali_uygun = sorted(uygun_talepler, key=hesapla_oncelik, reverse=True)
-            print(f"📊 Sıralanmış UYGUN talepler: {sirali_uygun}")
+            print(f"📊 /predict - Sıralanmış UYGUN talepler (Android'e gönderilecek): {sirali_uygun}")
         else:
-            # Eğer boş parklara ait hiç talep yoksa (ne gerçek ne dummy)
-            sirali_uygun = []
-            print("⚠️ Uygun (boş) parklara ait sıralanacak talep bulunamadı.")
-            # Bu durumda belki yine kuyruğa alma işlemi yapılabilir veya özel durum döndürülebilir.
-            # Şimdilik boş liste döndürelim, Android tarafı bunu handle etmeli.
-            # Alternatif olarak, kullanıcıya özel mesaj:
-            # return jsonify({
-            #     "status": "no_available_slot_match",
-            #     "message": "Boş park alanı bulunmasına rağmen eşleşen talep yok.", # Daha iyi mesaj lazım
-            #     "sirali_istekler": []
-            # })
-
+            print("⚠️ /predict - Uygun (boş) parklara ait sıralanacak talep bulunamadı.")
 
         # --- 5. Sonucu Android'e gönder ---
         return jsonify({
             "status": "success",
-            # Sadece boş parklara ait, sıralanmış talepleri gönder
-            "sirali_istekler": sirali_uygun
+            "sirali_istekler": sirali_uygun # Sıralanmış uygun listeyi gönder
         })
 
     except Exception as e:
-        print(f"❌ Sunucu hatası: {str(e)}")
-        traceback.print_exc() # Detaylı hata logu için
+        print(f"❌ /predict - Sunucu hatası: {str(e)}")
+        traceback.print_exc()
         return jsonify({
             "status": "error",
             "message": f"Sunucu hatası oluştu: {str(e)}"
         }), 500
 
 
-# --- Diğer endpointler (/queued, /assign) ---
+# --- /queued Endpoint'i ---
 @app.route('/queued', methods=['GET'])
 def queued_requests():
-    # Kuyruktaki talepleri zamana göre sıralayarak döndürelim (en eski en başta)
-    sirali_kuyruk = sorted(bekleyen_talepler, key=lambda item: item.get('timestamp', 0))
+    # Kuyruk artık hep önceliğe göre sıralı tutuluyor.
+    # Bu yüzden burada tekrar sıralamaya gerek yok. Direkt listeyi döndür.
+    print(f"ℹ️ /queued çağrıldı. Mevcut (önceliğe göre sıralı) kuyruk: {bekleyen_talepler}")
     return jsonify({
         "status": "ok",
-        "queued": sirali_kuyruk # Sıralanmış kuyruk
+        "queued": bekleyen_talepler # Doğrudan sıralı listeyi döndür
     })
 
+
+# --- /assign Endpoint'i ---
 @app.route('/assign', methods=['POST'])
 def assign_request():
     try:
         data = request.get_json()
-        doluluk = data.get("doluluk", {})  # {"A": 1, "B": 0, ...}
-        print(f"🅿️ /assign çağrıldı. Gelen doluluk: {doluluk}")
-        print(f"🅿️ Mevcut kuyruk: {bekleyen_talepler}")
-
-        tum_parklar = ["A", "B", "C", "D"]
+        doluluk = data.get("doluluk", {})  # Gelen doluluk (0/1 formatında bekleniyor)
+        print(f"🅿️ /assign çağrıldı. Gelen doluluk (0/1): {doluluk}")
+        # Kuyruk artık hep sıralı tutuluyor.
+        print(f"🅿️ Mevcut Kuyruk (atanmadan önce, önceliğe göre sıralı olmalı): {bekleyen_talepler}")
 
         # Kuyruk boşsa işlem yapma
         if not bekleyen_talepler:
-            print("🅿️ Kuyruk boş.")
+            print("🅿️ Kuyruk boş. Atama yapılamıyor.")
             return jsonify({"status": "empty", "message": "Bekleyen talep yok"})
 
-        # Kuyruktaki talepleri önceliğe göre sırala
-        # Not: Kuyruktakilerin timestamp'i de var, ona göre de sıralanabilir.
-        # Şimdilik önceliğe göre yapalım.
-        kuyruk_sirali_oncelik = sorted(bekleyen_talepler, key=hesapla_oncelik, reverse=True)
-        print(f"🅿️ Önceliğe göre sıralı kuyruk: {kuyruk_sirali_oncelik}")
-
+        # *** SIRALAMA KISMI KALDIRILDI ***
 
         # Boş bir park bul
         atanan_park = None
+        tum_parklar = ["A", "B", "C", "D"]
+        print(f"🅿️ Boş park aranıyor... Gelen doluluk: {doluluk}")
         for parkid in tum_parklar:
             if doluluk.get(parkid, 1) == 0:  # Boş (0) olan ilk parkı bul
                 atanan_park = parkid
-                break # İlk boş parkı bulduk, döngüden çık
+                print(f"🅿️ Boş park bulundu: {atanan_park}")
+                break # İlk boş parkı bulduk
 
         if atanan_park:
-            print(f"🅿️ Boş park bulundu: {atanan_park}")
-            # En öncelikli talebi seç
-            secilen_talep = kuyruk_sirali_oncelik[0]
-            print(f"🅿️ Atanacak en öncelikli talep: {secilen_talep}")
+            # *** İLK ELEMANI AL VE LİSTEDEN ÇIKAR ***
+            try:
+                # .pop(0) hem ilk (en öncelikli) elemanı alır hem de listeden siler.
+                secilen_talep = bekleyen_talepler.pop(0)
+                print(f"🅿️ Atanacak en öncelikli talep (kuyruğun ilk elemanıydı): {secilen_talep}")
+                print(f"🅿️ Talep kuyruktan silindi (pop(0) ile). Kalan kuyruk: {bekleyen_talepler}")
+            except IndexError:
+                 print(f"❌ Hata: Kuyruk boş olmasına rağmen atama bloğuna girildi?")
+                 return jsonify({"status": "error", "message": "Kuyruk boşken eleman alınmaya çalışıldı."}), 500
+            # *** ELEMAN ALMA VE SİLME SONU ***
 
             # Atama objesini oluştur
             atanan = {
                 "parkid": atanan_park, # Boş bulunan park ID'si
-                "current": secilen_talep["current"],
-                "desired": secilen_talep["desired"],
-                "original_parkid": secilen_talep.get("parkid"), # Orijinal istenen park (varsa)
-                "queued_timestamp": secilen_talep.get("timestamp"), # Kuyruğa alınma zamanı
-                "assigned_timestamp": time.time() # Atanma zamanı
+                "current": secilen_talep.get("current"),
+                "desired": secilen_talep.get("desired"),
+                "original_parkid": secilen_talep.get("parkid"),
+                "queued_timestamp": secilen_talep.get("timestamp"),
+                "assigned_timestamp": time.time()
             }
-
-            # Talebi kuyruktan çıkar
-            # ÖNEMLİ: Eğer birden fazla aynı talep olabilecekse, timestamp veya başka bir unique id ile silmek daha güvenli.
-            # Şimdilik içeriğe göre siliyoruz.
-            bekleyen_talepler.remove(secilen_talep)
-            print(f"🅿️ Talep kuyruktan silindi. Kalan kuyruk: {bekleyen_talepler}")
-
+            print(f"🅿️ Oluşturulan atama objesi: {atanan}")
 
             return jsonify({
                 "status": "assigned",
                 "assigned": atanan
             })
         else:
-            print("🅿️ Boş park alanı bulunamadı.")
+            print("🅿️ Atama için boş park alanı bulunamadı.")
             return jsonify({
-                "status": "full", # Boş park yoksa yine 'full' durumu
+                "status": "full",
                 "message": "Boş park alanı yok"
             })
 
     except Exception as e:
-        print(f"❌ /assign Hatası: {str(e)}")
+        print(f"❌ /assign - Endpoint Hatası: {str(e)}")
         traceback.print_exc()
         return jsonify({
             "status": "error",
@@ -203,5 +192,6 @@ def assign_request():
 
 
 if __name__ == '__main__':
-    # Debug modunu kapatıp host'u 0.0.0.0 yapmak production için daha uygun olabilir
-    app.run(host='0.0.0.0', port=5000, debug=True) # Debug=True test sırasında faydalı
+    # debug=True test sırasında faydalı, production'da False yapın
+    # host='0.0.0.0' dışarıdan erişim için gereklidir (örn: Railway, Docker)
+    app.run(host='0.0.0.0', port=5000, debug=True)
