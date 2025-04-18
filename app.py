@@ -9,6 +9,24 @@ app = Flask(__name__)
 # Hafızada bekleyen taleplerin tutulacağı liste
 bekleyen_talepler = []
 
+# Yeni eklenen: Son atamaların zaman damgalarını tutan sözlük
+recent_assignments = {}
+RECENT_ASSIGNMENT_TIMEOUT = 5 # Parkı kaç saniye kilitli tutalım? (Ayarlanabilir)
+# --- Global Değişkenler Sonu ---
+
+# --- Yardımcı Fonksiyon (Eski Kilitleri Temizlemek İçin) ---
+def clean_recent_assignments():
+    """Süresi dolmuş atama kilitlerini temizler."""
+    global recent_assignments
+    now = time.time()
+    keys_to_delete = [park for park, timestamp in recent_assignments.items() if now - timestamp > RECENT_ASSIGNMENT_TIMEOUT]
+    if keys_to_delete:
+        print(f"🧹 Zaman aşımı: Şu park kilitleri kaldırılıyor: {keys_to_delete}")
+        for key in keys_to_delete:
+            del recent_assignments[key]
+    # print(f"🧹 Temizlik sonrası kilitler: {recent_assignments}") # Debug için
+# --- Yardımcı Fonksiyon Sonu ---
+
 # Öncelik sıralama fonksiyonu
 def hesapla_oncelik(istek):
     # Öncelik = İstenen Şarj - Mevcut Şarj (Yüksek fark = Yüksek öncelik)
@@ -120,75 +138,82 @@ def queued_requests():
     })
 
 
-# --- /assign Endpoint'i ---
+# --- /assign Endpoint'i (Güncellenmiş Hali) ---
 @app.route('/assign', methods=['POST'])
 def assign_request():
+    global bekleyen_talepler, recent_assignments # Global değişkenlere erişim
+
+    # Her çağrıda önce eski kilitleri temizle
+    clean_recent_assignments()
+
     try:
         data = request.get_json()
-        doluluk = data.get("doluluk", {})  # Gelen doluluk (0/1 formatında bekleniyor)
+        doluluk = data.get("doluluk", {})
         print(f"🅿️ /assign çağrıldı. Gelen doluluk (0/1): {doluluk}")
-        # Kuyruk artık hep sıralı tutuluyor.
-        print(f"🅿️ Mevcut Kuyruk (atanmadan önce, önceliğe göre sıralı olmalı): {bekleyen_talepler}")
+        print(f"🅿️ Mevcut Kuyruk: {bekleyen_talepler}")
+        print(f"🅿️ Aktif Atama Kilitleri: {recent_assignments}")
 
-        # Kuyruk boşsa işlem yapma
         if not bekleyen_talepler:
-            print("🅿️ Kuyruk boş. Atama yapılamıyor.")
-            return jsonify({"status": "empty", "message": "Bekleyen talep yok"})
+             print("🅿️ Kuyruk boş. Atama yapılamıyor.")
+             return jsonify({"status": "empty", "message": "Kuyruk boş."}), 200
 
-        # *** SIRALAMA KISMI KALDIRILDI ***
-
-        # Boş bir park bul
+        # --- Atanacak Parkı Bulma (Kilit Kontrolü ile) ---
         atanan_park = None
-        tum_parklar = ["A", "B", "C", "D"]
-        print(f"🅿️ Boş park aranıyor... Gelen doluluk: {doluluk}")
-        for parkid in tum_parklar:
-            if doluluk.get(parkid, 1) == 0:  # Boş (0) olan ilk parkı bul
-                atanan_park = parkid
-                print(f"🅿️ Boş park bulundu: {atanan_park}")
-                break # İlk boş parkı bulduk
+        secilen_talep_index = 0 # Kuyruk sıralı olduğu için ilk elemanı alacağız
+        secilen_talep = bekleyen_talepler[secilen_talep_index]
 
-        if atanan_park:
-            # *** İLK ELEMANI AL VE LİSTEDEN ÇIKAR ***
-            try:
-                # .pop(0) hem ilk (en öncelikli) elemanı alır hem de listeden siler.
-                secilen_talep = bekleyen_talepler.pop(0)
-                print(f"🅿️ Atanacak en öncelikli talep (kuyruğun ilk elemanıydı): {secilen_talep}")
-                print(f"🅿️ Talep kuyruktan silindi (pop(0) ile). Kalan kuyruk: {bekleyen_talepler}")
-            except IndexError:
-                 print(f"❌ Hata: Kuyruk boş olmasına rağmen atama bloğuna girildi?")
-                 return jsonify({"status": "error", "message": "Kuyruk boşken eleman alınmaya çalışıldı."}), 500
-            # *** ELEMAN ALMA VE SİLME SONU ***
+        # Gelen doluluğa göre potansiyel boş parkları bul
+        possible_parks = [p for p, status in doluluk.items() if status == 0]
+        print(f"🅿️ Gelen doluluğa göre boş park adayları: {possible_parks}")
 
-            # Atama objesini oluştur
+        # Boş parkları kontrol et
+        for park_id in possible_parks:
+            print(f"🅿️ Park {park_id} kontrol ediliyor...")
+            # Eğer park yakın zamanda atanmışsa (kilitliyse), atla
+            if park_id in recent_assignments:
+                print(f"🅿️ Park {park_id} yakın zamanda atandığı için atlandı (kililtli).")
+                continue
+
+            # Boş ve kilitli olmayan ilk uygun parkı bulduk
+            atanan_park = park_id
+            print(f"🅿️ Boş ve kilitsiz park bulundu: {atanan_park}")
+            break # Başka park aramaya gerek yok
+        # --- Atanacak Parkı Bulma Sonu ---
+
+
+        # --- Atama ve Yanıt Oluşturma ---
+        if atanan_park is not None: # Uygun park bulunduysa
+            # Seçilen talebi kuyruktan çıkar
+            secilen_talep = bekleyen_talepler.pop(secilen_talep_index)
+            print(f"🅿️ Atanacak talep: {secilen_talep}")
+            print(f"🅿️ Talep kuyruktan silindi. Kalan kuyruk: {bekleyen_talepler}")
+
+            # Parkı geçici olarak kilitle (zaman damgası ekle)
+            recent_assignments[atanan_park] = time.time()
+            print(f"🅿️ Park {atanan_park} {RECENT_ASSIGNMENT_TIMEOUT} saniye kilitlendi. Kilitler: {recent_assignments}")
+
+            # Yanıt objesini oluştur
             atanan = {
-                "parkid": atanan_park, # Boş bulunan park ID'si
+                "parkid": atanan_park, # Atama yapılan park
                 "current": secilen_talep.get("current"),
                 "desired": secilen_talep.get("desired"),
-                "original_parkid": secilen_talep.get("parkid"),
-                 # *** BU SATIRI KONTROL ET/EKLE ***
-                "request_id": secilen_talep.get("request_id", -1.0), # .get() kullan ve varsayılan ekle
+                "original_parkid": secilen_talep.get("parkid"), # Orijinal tercih (gerekirse)
+                "request_id": secilen_talep.get("request_id", -1.0),
                 "assigned_timestamp": time.time()
             }
             print(f"🅿️ Android'e dönülecek atama objesi: {atanan}")
-
-            return jsonify({
-                "status": "assigned",
-                "assigned": atanan
-            })
+            return jsonify({"status": "assigned", "assigned": atanan})
         else:
-            print("🅿️ Atama için boş park alanı bulunamadı.")
-            return jsonify({
-                "status": "full",
-                "message": "Boş park alanı yok"
-            })
+            # Uygun park bulunamadı (ya hepsi doluydu ya da boş olanlar kilitliydi)
+            print("🅿️ Uygun (boş ve kilitsiz) park bulunamadı.")
+            return jsonify({"status": "full", "message": "Uygun park bulunamadı (ya dolu ya da yeni atandı)."}), 200
+        # --- Atama ve Yanıt Sonu ---
 
     except Exception as e:
-        print(f"❌ /assign - Endpoint Hatası: {str(e)}")
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": f"Sunucu hatası: {str(e)}"
-        }), 500
+        print(f"❌ /assign Hatası: {e}")
+        # import traceback # Detaylı hata için
+        # traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == '__main__':
