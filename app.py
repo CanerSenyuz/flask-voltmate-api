@@ -8,25 +8,6 @@ import logging
 import sys # stdout kullanmak için
 app = Flask(__name__)
 
-# Railway üzerinde logların görünmesi için stdout'a yönlendirme ve seviye ayarı
-# Eğer Flask'in varsayılan bir handler'ı varsa (genellikle debug=False'da stderr'e olur)
-# ve bununla çakışmasını istemiyorsanız veya emin olmak istiyorsanız kaldırabilirsiniz.
-# Ancak genellikle sadece seviyeyi ayarlamak ve yeni bir handler eklemek yeterlidir.
-# if app.logger.hasHandlers():
-#     app.logger.handlers.clear() # Veya belirli bir handler'ı kaldırın
-
-stream_handler = logging.StreamHandler(sys.stdout) # Logları stdout'a gönder
-stream_handler.setLevel(logging.INFO) # INFO ve üzeri seviyedeki logları yakala (DEBUG için logging.DEBUG)
-
-# Log formatını belirleyebilirsiniz (isteğe bağlı ama önerilir)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s [in %(pathname)s:%(lineno)d]')
-stream_handler.setFormatter(formatter)
-
-app.logger.addHandler(stream_handler) # Handler'ı Flask logger'ına ekle
-app.logger.setLevel(logging.INFO)     # Flask logger'ının genel seviyesini ayarla (DEBUG için logging.DEBUG)
-
-# Yapılandırmanın çalıştığını test etmek için bir başlangıç logu
-app.logger.info("Flask uygulaması başlatılıyor ve loglama stdout'a INFO seviyesinde yapılandırıldı.")
 
 # --- Global Değişkenler ---
 # Park bazlı talepler için (eski sistemden)
