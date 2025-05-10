@@ -365,6 +365,9 @@ def assign_queued_time_slot():
 
         # Kuyruğu öncelik sırasına göre sırala
         zaman_bazli_bekleyen_talepler = supersort_requests(zaman_bazli_bekleyen_talepler, calculate_priority_time)
+        for r in zaman_bazli_bekleyen_talepler:
+            app.logger.info(f"Priority={calculate_priority_time(r)} | Talep: {r}")
+
 
         park_based_reservations = data.get("park_based_reservations", [])
         app.logger.info(f"🕰️ /assign_queued_time_slot - Çağrıldı.")
