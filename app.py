@@ -328,6 +328,33 @@ def predict_time_slot():
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"Zaman talebi işleme hatası: {str(e)}"}), 500
 
+# --- ZAMAN BAZLI ÖNCELİK HESAPLAMA FONKSİYONU ---
+def calculate_priority_time(req):
+    now = time.time()
+    current = req.get("current", 0)
+    desired = req.get("desired", 100)
+    entry_str = req.get("entryTime", "00:00")
+    exit_str = req.get("exitTime", "00:00")
+    submission_time = req.get("submission_time", now)
+
+    def time_to_minutes(tstr):
+        try:
+            h, m = map(int, tstr.split(":"))
+            return h * 60 + m
+        except:
+            return 0
+
+    entry_minutes = time_to_minutes(entry_str)
+    exit_minutes = time_to_minutes(exit_str)
+    duration = max(1, exit_minutes - entry_minutes)
+
+    charge_priority = (desired - current) * 1.5
+    wait_priority = max(0, (now - submission_time) / 300)
+    shorter_duration_bonus = max(0, 180 - duration) * 0.5
+
+    return charge_priority + wait_priority + shorter_duration_bonus
+
+# --- ZAMAN BAZLI TALEP ATAMA ---
 @app.route('/assign_queued_time_slot', methods=['POST'])
 def assign_queued_time_slot():
     global zaman_bazli_bekleyen_talepler
@@ -335,7 +362,10 @@ def assign_queued_time_slot():
         data = request.get_json()
         if not data:
             return jsonify({"status": "error", "message": "İstek gövdesi boş veya JSON değil."}), 400
-        
+
+        # Kuyruğu öncelik sırasına göre sırala
+        zaman_bazli_bekleyen_talepler = supersort_requests(zaman_bazli_bekleyen_talepler, calculate_priority_time)
+
         park_based_reservations = data.get("park_based_reservations", [])
         app.logger.info(f"🕰️ /assign_queued_time_slot - Çağrıldı.")
         app.logger.info(f"🕰️ /assign_queued_time_slot - Gelen park bazlı rezervasyonlar: {park_based_reservations}")
@@ -350,20 +380,20 @@ def assign_queued_time_slot():
             for park_res in park_based_reservations:
                 if isinstance(park_res, dict) and park_res.get("parkid"):
                     aktif_dolu_parklar.add(park_res.get("parkid"))
-        
+
         app.logger.info(f"🕰️ /assign_queued_time_slot - Aktif dolu parklar (CloudDB'den gelen): {aktif_dolu_parklar}")
 
         herhangi_bir_park_bos = False
-        bos_park_id = None # Atama için boş park ID'sini sakla
+        bos_park_id = None
         for p_id in TUM_PARKLAR:
             if p_id not in aktif_dolu_parklar:
                 herhangi_bir_park_bos = True
-                bos_park_id = p_id # İlk boş parkı al
+                bos_park_id = p_id
                 app.logger.info(f"🕰️ /assign_queued_time_slot - Boş fiziksel park bulundu: {bos_park_id}")
                 break
-        
+
         if herhangi_bir_park_bos:
-            atanacak_zaman_talebi = zaman_bazli_bekleyen_talepler.pop(0) # Kuyruktan ilkini al
+            atanacak_zaman_talebi = zaman_bazli_bekleyen_talepler.pop(0)
             app.logger.info(f"🎉 /assign_queued_time_slot - Zaman bazlı talep atanıyor (ID: {atanacak_zaman_talebi.get('request_id')}): {atanacak_zaman_talebi}")
             app.logger.info(f"📊 /assign_queued_time_slot - Kalan Zaman Bazlı Kuyruk (eleman sayısı: {len(zaman_bazli_bekleyen_talepler)}): {zaman_bazli_bekleyen_talepler}")
 
@@ -374,7 +404,7 @@ def assign_queued_time_slot():
                 "desired": atanacak_zaman_talebi.get("desired"),
                 "request_id": atanacak_zaman_talebi.get("request_id"),
                 "assigned_timestamp": time.time(),
-                "assigned_to_park_slot": bos_park_id # Hangi fiziksel slotun uygun olduğuna dair bilgi (opsiyonel)
+                "assigned_to_park_slot": bos_park_id
             }
             return jsonify({"status": "assigned", "assigned_details": assigned_details}), 200
         else:
@@ -385,6 +415,7 @@ def assign_queued_time_slot():
         app.logger.error(f"❌ /assign_queued_time_slot - Sunucu hatası: {str(e)}")
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"Zaman atama hatası: {str(e)}"}), 500
+
 
 @app.route('/queued_time_based', methods=['GET'])
 def queued_time_based_requests():
