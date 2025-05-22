@@ -11,6 +11,7 @@ import sys # stdout kullanmak için
 import joblib
 import pandas as pd
 from datetime import datetime
+import pytz # <--- pytz kütüphanesini import edin
 # --- YENİ EKLENEN IMPORTLAR SONU ---
 
 app = Flask(__name__)
@@ -411,50 +412,54 @@ def get_ai_dynamic_price():
     app.logger.info(f"💡 /get_ai_dynamic_price endpoint'ine istek geldi.")
     if AI_MODEL is None:
         app.logger.error("❌ /get_ai_dynamic_price - Model yüklenemediği için fiyat hesaplanamıyor.")
-        # Model yüklenememişse, belki sabit bir varsayılan fiyat veya hata mesajı dönebilirsiniz.
-        # Ya da daha önce tanımladığınız BASE_PRICE_PARKING_AI'yi kullanabilirsiniz.
         return jsonify({
             "status": "error_model_unavailable",
             "message": "Dinamik fiyatlandırma modeli şu anda kullanılamıyor.",
-            "dynamic_price_tl": BASE_PRICE_PARKING_AI # Varsayılan bir fiyat
-        }), 503 # Service Unavailable
+            "dynamic_price_tl": BASE_PRICE_PARKING_AI
+        }), 503
 
     try:
-        current_time = datetime.now()
-        hour = current_time.hour
-        day_of_week = current_time.weekday()  # Pazartesi=0, Pazar=6
-        month = current_time.month
-        year = current_time.year # Modelimiz yılı da girdi olarak alıyordu
+        # Mevcut UTC zamanını al
+        utc_now = datetime.now(pytz.utc)
+        app.logger.info(f"🕰️ Sunucu UTC zamanı: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
 
-        # Modelin beklediği formatta bir DataFrame oluştur
-        # Sütun adlarının eğitimdekiyle ('year', 'month', 'day_of_week', 'hour_of_day') aynı olması KRİTİK!
+        # Türkiye saat dilimine çevir (Europe/Istanbul)
+        turkey_tz = pytz.timezone('Europe/Istanbul')
+        local_time = utc_now.astimezone(turkey_tz)
+        app.logger.info(f"🇹🇷 Yerel Türkiye zamanı (Europe/Istanbul): {local_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+
+        # Model için özellikleri yerel zamana göre çıkar
+        hour = local_time.hour
+        day_of_week = local_time.weekday()  # Pazartesi=0, Pazar=6
+        month = local_time.month
+        year = local_time.year
+
         input_features_df = pd.DataFrame([[year, month, day_of_week, hour]],
                                        columns=['year', 'month', 'day_of_week', 'hour_of_day'])
 
-        app.logger.info(f"🧠 /get_ai_dynamic_price - Model için girdi özellikleri: {input_features_df.to_dict(orient='records')}")
+        app.logger.info(f"🧠 /get_ai_dynamic_price - Model için girdi özellikleri (YEREL SAATE GÖRE): {input_features_df.to_dict(orient='records')}")
 
-        # Tahmin yap
-        predicted_demand = AI_MODEL.predict(input_features_df)[0] # predict array döndürür, ilk elemanı alırız
+        predicted_demand = AI_MODEL.predict(input_features_df)[0]
         app.logger.info(f"📈 /get_ai_dynamic_price - Model tahmini (demand_unit): {predicted_demand:.2f}")
 
-        # Tahmini fiyata dönüştür
         price = calculate_dynamic_price_from_ai(predicted_demand)
         app.logger.info(f"💲 /get_ai_dynamic_price - Hesaplanan dinamik fiyat: {price} TL")
 
         return jsonify({
             "status": "success",
-            "current_timestamp": current_time.strftime('%Y-%m-%d %H:%M:%S'),
+            "server_utc_time": utc_now.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            "calculated_for_local_time_tr": local_time.strftime('%Y-%m-%d %H:%M:%S %Z'), # Bilgi amaçlı
             "model_input_hour": hour,
             "model_input_day_of_week": day_of_week,
             "model_input_month": month,
             "model_input_year": year,
-            "predicted_demand_unit": round(float(predicted_demand), 2), # JSON için float'a çevir
-            "dynamic_price_tl": float(price) # JSON için float'a çevir
+            "predicted_demand_unit": round(float(predicted_demand), 2),
+            "dynamic_price_tl": float(price)
         })
 
     except Exception as e:
         app.logger.error(f"❌ /get_ai_dynamic_price - Fiyat hesaplama sırasında hata: {str(e)}")
-        app.logger.error(traceback.format_exc()) # Detaylı hata logu terminale/dosyaya basılır
+        app.logger.error(traceback.format_exc())
         return jsonify({"status": "error_calculation", "message": f"Dinamik fiyat hesaplanırken bir hata oluştu."}), 500
 # --- YENİ EKLENEN ENDPOINT SONU ---
 
