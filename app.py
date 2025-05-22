@@ -457,7 +457,7 @@ def get_ai_dynamic_price():
         app.logger.error(traceback.format_exc()) # Detaylı hata logu terminale/dosyaya basılır
         return jsonify({"status": "error_calculation", "message": f"Dinamik fiyat hesaplanırken bir hata oluştu."}), 500
 # --- YENİ EKLENEN ENDPOINT SONU ---
-
+#
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001)) # Portu 5000'den 5001'e değiştirdim, çakışma olmasın diye
