@@ -37,6 +37,7 @@ TUM_PARKLAR = ["A", "B", "C", "D"]
 # Zaman bazlı talepler için YENİ kuyruk
 zaman_bazli_bekleyen_talepler = []
 # --- Global Değişkenler Sonu ---
+#deneme
 
 
 # --- Yardımcı Fonksiyon (Eski Park Kilitlerini Temizlemek İçin) ---
